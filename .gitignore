@@ -1,0 +1,16 @@
+# virtual envs / caches
+venv/
+.env/
+__pycache__/
+.ipynb_checkpoints/
+*.pyc
+
+# OS stuff
+.DS_Store
+Thumbs.db
+
+# node / misc (just in case)
+node_modules/
+
+# jupyter lab extensions (from the warning)
+share/jupyter/
