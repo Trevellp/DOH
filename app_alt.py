@@ -66,48 +66,136 @@ residency_opts = sort_opts(df_raw["residency"]) if "residency" in df_raw.columns
 age_opts       = sort_opts(df_raw["age_group"]) if "age_group" in df_raw.columns else []
 sex_opts       = sort_opts(df_raw["sex"])       if "sex"       in df_raw.columns else []
 
+def opts_list(values):
+    return [{"label": v, "value": v} for v in values]
+
 # ----------------------------
 # Layout (exported symbol)
 # ----------------------------
+# Skip link (keyboard users can jump straight to filters)
+skip_link = html.A(
+    "Skip to filters",
+    href="#alt-filters",
+    className="visually-hidden-focusable",
+    tabIndex=0
+)
+
+# KPI card
+kpi_card = dbc.Card(
+    dbc.CardBody([
+        html.H4("Total Discharges", className="card-title text-white"),
+        html.H2(f"{total_unique:,}", className="text-white"),
+        html.Small("Count of unique records from 2018 to 2024", className="text-white-50")
+    ]),
+    className="bg-success text-center mb-4"
+)
+
+# Accessible filters (multi-select + persistence)
+filters_card = dbc.Card([
+    dbc.CardBody([
+        html.H5("Filter Data", tabIndex=1),
+
+        html.Label("County", htmlFor="county-filter", tabIndex=2, className="form-label"),
+        dcc.Dropdown(
+            id="county-filter",
+            options=opts_list(county_opts),
+            multi=True,
+            placeholder="County",
+            className="mb-2",
+            persistence=True, persistence_type="session",
+        ),
+
+        html.Label("Region", htmlFor="region-filter", tabIndex=3, className="form-label"),
+        dcc.Dropdown(
+            id="region-filter",
+            options=opts_list(region_opts),
+            multi=True,
+            placeholder="Region",
+            className="mb-2",
+            persistence=True, persistence_type="session",
+        ),
+
+        html.Label("Residency", htmlFor="residency-filter", tabIndex=4, className="form-label"),
+        dcc.Dropdown(
+            id="residency-filter",
+            options=opts_list(residency_opts),
+            multi=True,
+            placeholder="Residency",
+            className="mb-2",
+            persistence=True, persistence_type="session",
+        ),
+
+        html.Label("Age Group", htmlFor="age-filter", tabIndex=5, className="form-label"),
+        dcc.Dropdown(
+            id="age-filter",
+            options=opts_list(age_opts),
+            multi=True,
+            placeholder="Age Group",
+            className="mb-2",
+            persistence=True, persistence_type="session",
+        ),
+
+        html.Label("Sex", htmlFor="sex-filter", tabIndex=6, className="form-label"),
+        dcc.Dropdown(
+            id="sex-filter",
+            options=opts_list(sex_opts),
+            multi=True,
+            placeholder="Sex",
+            className="mb-0",
+            persistence=True, persistence_type="session",
+        ),
+    ])
+], id="alt-filters", className="mb-4")
+
 layout = dbc.Container([
+    skip_link,
     html.H2(
         "Substance Use Emergency Discharges — Alt Views (2018–2024)",
-        className="text-white bg-dark p-3 text-center mb-4"
+        className="text-white bg-dark p-3 text-center mb-4",
+        tabIndex=0
     ),
 
     dbc.Row([
         # Left: KPI + Filters
-        dbc.Col([
-            dbc.Card([
-                dbc.CardBody([
-                    html.H4("Total Discharges", className="card-title text-white"),
-                    html.H2(f"{total_unique:,}", className="text-white"),
-                    html.Small("Count of unique records from 2018 to 2024", className="text-white-50")
-                ])
-            ], className="bg-success text-center mb-4"),
+        dbc.Col([kpi_card, filters_card], width=3),
 
-            html.H5("Filter Data"),
-            dcc.Dropdown(county_opts,    id="county-filter",    placeholder="County",    className="mb-2"),
-            dcc.Dropdown(region_opts,    id="region-filter",    placeholder="Region",    className="mb-2"),
-            dcc.Dropdown(residency_opts, id="residency-filter", placeholder="Residency", className="mb-2"),
-            dcc.Dropdown(age_opts,       id="age-filter",       placeholder="Age Group", className="mb-2"),
-            dcc.Dropdown(sex_opts,       id="sex-filter",       placeholder="Sex",       className="mb-4"),
-        ], width=3),
-
-        # Middle: charts
+        # Middle: charts — focusable wrappers with ARIA labels
         dbc.Col([
-            dcc.Graph(id="county-year-lines", className="mb-4", style={"height": "400px"}),
-            dcc.Graph(id="sex-year-stacked", style={"height": "360px"})
+            html.Div([
+                dcc.Graph(id="county-year-lines", className="mb-0", style={"height": "400px"}),
+                html.P(
+                    "Line chart of discharges by county over time. Use the legend to toggle counties.",
+                    className="sr-only"
+                ),
+            ],
+            tabIndex=7, role="group",
+            **{"aria-label": "Chart: Discharges by County and Year"},
+            className="mb-4"),
+
+            html.Div([
+                dcc.Graph(id="sex-year-stacked", style={"height": "360px"}),
+                html.P(
+                    "Stacked bar chart of yearly discharges by gender. Use the legend to toggle categories.",
+                    className="sr-only"
+                ),
+            ],
+            tabIndex=8, role="group",
+            **{"aria-label": "Chart: Yearly Discharges by Gender"}),
         ], width=6),
 
-        # Right: tables + pie
+        # Right: tables + focusable pie chart
         dbc.Col([
             html.H5("By County"),
             html.Div(id="table-county", className="mb-3"),
             html.H5("By Age Group"),
             html.Div(id="table-age", className="mb-3"),
             html.H5("Gender Share"),
-            dcc.Graph(id="sex-pie", style={"height": "260px"}),
+            html.Div([
+                dcc.Graph(id="sex-pie", style={"height": "260px"}),
+                html.P("Pie chart of discharges by gender.", className="sr-only"),
+            ],
+            tabIndex=9, role="group",
+            **{"aria-label": "Chart: Discharges by Gender"}),
         ], width=3),
     ])
 ], fluid=True)
@@ -128,12 +216,20 @@ layout = dbc.Container([
     Input("sex-filter", "value"),
 )
 def update_dashboard(county, region, residency, age, sex):
+    # Accept single or multi-select values
+    def apply_filter(frame, col, val):
+        if val is None or (isinstance(val, (list, tuple)) and len(val) == 0):
+            return frame
+        if isinstance(val, (list, tuple)):
+            return frame[frame[col].isin(val)]
+        return frame[frame[col] == val]
+
     dff = df_raw.copy()
-    if county:    dff = dff[dff["county"] == county]
-    if region:    dff = dff[dff["region"] == region]
-    if residency: dff = dff[dff["residency"] == residency]
-    if age:       dff = dff[dff["age_group"] == age]
-    if sex:       dff = dff[dff["sex"] == sex]
+    if "county" in dff.columns:    dff = apply_filter(dff, "county", county)
+    if "region" in dff.columns:    dff = apply_filter(dff, "region", region)
+    if "residency" in dff.columns: dff = apply_filter(dff, "residency", residency)
+    if "age_group" in dff.columns: dff = apply_filter(dff, "age_group", age)
+    if "sex" in dff.columns:       dff = apply_filter(dff, "sex", sex)
 
     dff_uniq = dff.drop_duplicates(subset="record_id")
 
